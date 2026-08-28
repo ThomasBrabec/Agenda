@@ -38,8 +38,40 @@ if "access_token" not in token_result:
 access_token = token_result["access_token"]
 
 
-# 2. Agenda ophalen
-url = f"https://graph.microsoft.com/v1.0/users/{USER_ID}/calendar/events"
+# ============================================================
+# PERIODE BEPALEN
+# ============================================================
+
+amsterdam = ZoneInfo("Europe/Amsterdam")
+
+today = datetime.now(amsterdam)
+
+# Eerste dag van deze maand
+first_of_this_month = today.replace(
+    day=1,
+    hour=0,
+    minute=0,
+    second=0,
+    microsecond=0
+)
+
+# Eerste dag van vorige maand
+if first_of_this_month.month == 1:
+    first_of_previous_month = first_of_this_month.replace(
+        year=first_of_this_month.year - 1,
+        month=12
+    )
+else:
+    first_of_previous_month = first_of_this_month.replace(
+        month=first_of_this_month.month - 1
+    )
+
+
+# ============================================================
+# AGENDA OPHALEN
+# ============================================================
+
+url = f"https://graph.microsoft.com/v1.0/users/{USER_ID}/calendar/calendarView"
 
 headers = {
     "Authorization": f"Bearer {access_token}",
@@ -47,19 +79,44 @@ headers = {
 }
 
 params = {
+    "startDateTime": first_of_previous_month.isoformat(),
+    "endDateTime": first_of_this_month.isoformat(),
     "$select": "subject,start,end,location",
-    "$top": 10,
+    "$top": 100,
 }
 
-response = requests.get(
-    url,
-    headers=headers,
-    params=params,
+
+# Alle pagina's ophalen
+events = []
+
+while url:
+
+    response = requests.get(
+        url,
+        headers=headers,
+        params=params,
+    )
+
+    response.raise_for_status()
+
+    data = response.json()
+
+    events.extend(data.get("value", []))
+
+    # Volgende pagina
+    url = data.get("@odata.nextLink")
+
+    # Parameters alleen bij de eerste request meesturen
+    params = None
+
+
+print(
+    f"Periode: {first_of_previous_month.strftime('%Y-%m-%d')}"
+    f" t/m "
+    f"{first_of_this_month.strftime('%Y-%m-%d')}"
 )
 
-response.raise_for_status()
-
-data = response.json()
+print(f"Totaal aantal afspraken: {len(events)}")
 
 
 # ============================================================
@@ -101,10 +158,9 @@ rows = [
     ["Datum", "Onderwerp", "Start", "Einde", "Locatie"]
 ]
 
-# UTC-tijd van Microsoft Graph omzetten naar Nederlandse tijd
-amsterdam = ZoneInfo("Europe/Amsterdam")
+utc = ZoneInfo("UTC")
 
-for event in data.get("value", []):
+for event in events:
 
     subject = event.get("subject", "")
 
@@ -113,15 +169,20 @@ for event in data.get("value", []):
 
     location = event.get("location", {}).get("displayName", "")
 
+    # Alleen afspraken met een locatie meenemen
+    if not location:
+        continue
+
+    # UTC omzetten naar Nederlandse tijd
     start = datetime.fromisoformat(start).replace(
-        tzinfo=ZoneInfo("UTC")
+        tzinfo=utc
     ).astimezone(amsterdam)
 
     end = datetime.fromisoformat(end).replace(
-        tzinfo=ZoneInfo("UTC")
+        tzinfo=utc
     ).astimezone(amsterdam)
 
-    # Datum en tijd splitsen
+    # Datum en tijd
     start_date = start.strftime("%Y-%m-%d")
     start_time = start.strftime("%H:%M")
     end_time = end.strftime("%H:%M")
