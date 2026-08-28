@@ -5,6 +5,8 @@ import requests
 from msal import ConfidentialClientApplication
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 
 # ============================================================
@@ -99,6 +101,9 @@ rows = [
     ["Datum", "Onderwerp", "Start", "Einde", "Locatie"]
 ]
 
+# UTC-tijd van Microsoft Graph omzetten naar Nederlandse tijd
+amsterdam = ZoneInfo("Europe/Amsterdam")
+
 for event in data.get("value", []):
 
     subject = event.get("subject", "")
@@ -108,11 +113,18 @@ for event in data.get("value", []):
 
     location = event.get("location", {}).get("displayName", "")
 
-    # Datum en tijd splitsen
-    start_date = start[:10]
-    start_time = start[11:16]
+    start = datetime.fromisoformat(start).replace(
+        tzinfo=ZoneInfo("UTC")
+    ).astimezone(amsterdam)
 
-    end_time = end[11:16]
+    end = datetime.fromisoformat(end).replace(
+        tzinfo=ZoneInfo("UTC")
+    ).astimezone(amsterdam)
+
+    # Datum en tijd splitsen
+    start_date = start.strftime("%Y-%m-%d")
+    start_time = start.strftime("%H:%M")
+    end_time = end.strftime("%H:%M")
 
     rows.append([
         start_date,
